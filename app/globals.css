@@ -132,6 +132,15 @@ body {
   100% { transform: scale(2.6);  opacity: 0; }
 }
 
+/* SVG path element pulse for Leaflet Circle components */
+@keyframes mv-danger-pulse {
+  0%, 100% { stroke-opacity: 0.65; fill-opacity: 0.14; }
+  50%       { stroke-opacity: 1.0;  fill-opacity: 0.28; }
+}
+.mv-danger-pulse path {
+  animation: mv-danger-pulse 1.5s ease-in-out infinite;
+}
+
 /* Slide-in for pattern alert bar */
 @keyframes pattern-slide-in {
   from { opacity: 0; transform: translateY(8px); }
