@@ -8,6 +8,7 @@ import type { FeatureCollection, Feature, Point } from "geojson";
 import type { ModuleId, MovementPattern } from "@/lib/types";
 import { RISK_COLORS } from "@/lib/risk-colors";
 import MovementLayer from "./MovementLayer";
+import TrafficLayer from "./TrafficLayer";
 
 export interface RiskMapProps {
   geojson: FeatureCollection;
@@ -127,7 +128,10 @@ export default function RiskMapInner({
         onEachFeature={onEachFeature}
       />
 
-      {/* Movement intelligence layer — vehicles, people, DBSCAN clusters */}
+      {/* Global traffic density heatmap — 4 000 worldwide entity dots + heatgrid */}
+      <TrafficLayer visible={showMovement} />
+
+      {/* SAR-correlated movement intelligence layer — DBSCAN + pattern analysis */}
       <MovementLayer visible={showMovement} onPatterns={onPatterns} />
 
       <FlyToAsset geojson={geojson} selectedId={selectedId} />
