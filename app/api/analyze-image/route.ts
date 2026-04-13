@@ -4,11 +4,26 @@ import { analyzeImage } from "@/lib/liquid-client";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { imageBase64, assetName, assetType, location } = body as {
+    const {
+      imageBase64,
+      assetName,
+      assetType,
+      location,
+      riskScore,
+      riskLevel,
+      rateMMmo,
+      totalMM,
+      trend,
+    } = body as {
       imageBase64: string;
       assetName: string;
       assetType: string;
       location: string;
+      riskScore?: number;
+      riskLevel?: string;
+      rateMMmo?: number;
+      totalMM?: number;
+      trend?: string;
     };
 
     if (!imageBase64) {
@@ -19,6 +34,11 @@ export async function POST(request: NextRequest) {
       name: assetName ?? "Unknown Asset",
       type: assetType ?? "infrastructure",
       location: location ?? "Unknown Location",
+      riskScore,
+      riskLevel,
+      rateMMmo,
+      totalMM,
+      trend,
     });
 
     return NextResponse.json(result);

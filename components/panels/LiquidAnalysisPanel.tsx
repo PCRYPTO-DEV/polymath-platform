@@ -12,6 +12,7 @@ interface AnalysisResult {
 }
 
 // Sample InSAR image descriptions for the three bundled samples
+// riskScore/rateMMmo/etc are passed to the analysis engine for context-aware output
 const SAR_SAMPLES = [
   {
     id: "nhw8_yamuna_insar",
@@ -20,22 +21,37 @@ const SAR_SAMPLES = [
     assetType: "bridge",
     location: "Delhi–Gurugram, Haryana",
     description: "Fringe pattern indicating vertical displacement",
+    riskScore: 91,
+    riskLevel: "dangerous",
+    rateMMmo: -9.4,
+    totalMM: -88.2,
+    trend: "accelerating",
   },
   {
     id: "dwarka_subsidence_insar",
     label: "Dwarka Sector 23 — Subsidence",
-    assetName: "Dwarka Sector 23",
+    assetName: "Dwarka Sector 23 Settlement Zone",
     assetType: "building",
-    location: "Dwarka, New Delhi",
+    location: "Dwarka, South-West Delhi",
     description: "Bowl-shaped subsidence deformation",
+    riskScore: 88,
+    riskLevel: "dangerous",
+    rateMMmo: -7.1,
+    totalMM: -64.3,
+    trend: "accelerating",
   },
   {
     id: "aravalli_amplitude",
     label: "Aravalli Ridge — SAR Amplitude",
     assetName: "Aravalli Ridge South Face",
     assetType: "slope",
-    location: "Faridabad, Haryana",
+    location: "Faridabad — Aravalli Hills Southern Scarp",
     description: "Backscatter amplitude for slope monitoring",
+    riskScore: 85,
+    riskLevel: "dangerous",
+    rateMMmo: -11.2,
+    totalMM: -102.4,
+    trend: "accelerating",
   },
 ];
 
@@ -58,12 +74,13 @@ async function fetchAnalysis(
   imageBase64: string,
   assetName: string,
   assetType: string,
-  location: string
+  location: string,
+  extra?: { riskScore?: number; riskLevel?: string; rateMMmo?: number; totalMM?: number; trend?: string }
 ): Promise<AnalysisResult> {
   const res = await fetch("/api/analyze-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageBase64, assetName, assetType, location }),
+    body: JSON.stringify({ imageBase64, assetName, assetType, location, ...extra }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
@@ -97,7 +114,14 @@ export default function LiquidAnalysisPanel() {
         imageBase64 ?? mockImageBase64(),
         sample.assetName,
         sample.assetType,
-        sample.location
+        sample.location,
+        {
+          riskScore: sample.riskScore,
+          riskLevel: sample.riskLevel,
+          rateMMmo: sample.rateMMmo,
+          totalMM: sample.totalMM,
+          trend: sample.trend,
+        }
       );
       setSarResult(result);
     } catch (err) {
