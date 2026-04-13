@@ -9,6 +9,7 @@ interface AnalysisResult {
   interpretation: string;
   confidence?: string;
   flags?: string[];
+  source?: string;
 }
 
 // Sample InSAR image descriptions for the three bundled samples
@@ -602,8 +603,22 @@ function AnalysisOutput({
         padding: "10px 12px",
       }}
     >
-      <div style={{ fontSize: 10, color: "#484f58", marginBottom: 6, letterSpacing: "0.06em" }}>
-        {cameraMode ? "CAMERA AI ASSESSMENT" : "LFM2-VL ASSESSMENT"}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <div style={{ fontSize: 10, color: "#484f58", letterSpacing: "0.06em" }}>
+          {cameraMode ? "CAMERA AI ASSESSMENT" : "SAR INTELLIGENCE ASSESSMENT"}
+        </div>
+        {result.source && (
+          <span style={{
+            fontSize: 9,
+            color: result.source === "Parametric Engine" ? "#8b949e" : "#06b6d4",
+            background: result.source === "Parametric Engine" ? "#161b22" : "rgba(6,182,212,0.1)",
+            border: `1px solid ${result.source === "Parametric Engine" ? "#30363d" : "rgba(6,182,212,0.3)"}`,
+            borderRadius: 3,
+            padding: "1px 5px",
+          }}>
+            {result.source}
+          </span>
+        )}
       </div>
       <p style={{ fontSize: 12, color: "#c9d1d9", lineHeight: 1.6, margin: 0 }}>
         {result.interpretation}

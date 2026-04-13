@@ -26,14 +26,14 @@ export async function POST(request: NextRequest) {
       trend?: string;
     };
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: "imageBase64 is required" }, { status: 400 });
+    if (!assetName || !assetType) {
+      return NextResponse.json({ error: "assetName and assetType are required" }, { status: 400 });
     }
 
-    const result = await analyzeImage(imageBase64, {
-      name: assetName ?? "Unknown Asset",
-      type: assetType ?? "infrastructure",
-      location: location ?? "Unknown Location",
+    const result = await analyzeImage(imageBase64 ?? "", {
+      name: assetName,
+      type: assetType,
+      location: location ?? "Global",
       riskScore,
       riskLevel,
       rateMMmo,
