@@ -9,6 +9,7 @@ import type { ModuleId, MovementPattern } from "@/lib/types";
 import { RISK_COLORS } from "@/lib/risk-colors";
 import MovementLayer from "./MovementLayer";
 import TrafficLayer from "./TrafficLayer";
+import AISLayer from "./AISLayer";
 
 export interface RiskMapProps {
   geojson: FeatureCollection;
@@ -16,6 +17,7 @@ export interface RiskMapProps {
   activeModule: ModuleId | "all";
   onAssetClick: (id: string) => void;
   showMovement?: boolean;
+  showAIS?: boolean;
   onPatterns?: (patterns: MovementPattern[]) => void;
 }
 
@@ -56,6 +58,7 @@ export default function RiskMapInner({
   activeModule,
   onAssetClick,
   showMovement = true,
+  showAIS = false,
   onPatterns,
 }: RiskMapProps) {
   const layerKey = `${activeModule}-${selectedId ?? "none"}`;
@@ -133,6 +136,9 @@ export default function RiskMapInner({
 
       {/* SAR-correlated movement intelligence layer — DBSCAN + pattern analysis */}
       <MovementLayer visible={showMovement} onPatterns={onPatterns} />
+
+      {/* Live AIS vessel tracking — aisstream.io WebSocket */}
+      <AISLayer visible={showAIS} />
 
       <FlyToAsset geojson={geojson} selectedId={selectedId} />
     </MapContainer>

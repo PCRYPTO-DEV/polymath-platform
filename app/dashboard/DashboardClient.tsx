@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import AlertsPanel from "@/components/panels/AlertsPanel";
 import RiskMap from "@/components/map/RiskMap";
 import AssetDetailPanel from "@/components/panels/AssetDetailPanel";
 import ModuleLegend from "@/components/panels/ModuleLegend";
 import LiquidAnalysisPanel from "@/components/panels/LiquidAnalysisPanel";
+import SentinelPanel from "@/components/panels/SentinelPanel";
 import type { AlertItem, AssetDetail, ModuleId, MovementPattern, PatternSeverity } from "@/lib/types";
 import type { FeatureCollection } from "geojson";
 
@@ -76,30 +77,65 @@ function PatternBar({ patterns }: { patterns: MovementPattern[] }) {
   );
 }
 
-// ── Movement toggle button ────────────────────────────────────────────────────
-function MovementToggle({ on, count, onToggle }: { on: boolean; count: number; onToggle: () => void }) {
+// ── Map toolbar (top-right) — movement + AIS + sentinel toggles ──────────────
+function MapToolbar({
+  showMovement, movementCount, onToggleMovement,
+  showAIS, onToggleAIS,
+  showSentinel, onToggleSentinel,
+}: {
+  showMovement: boolean; movementCount: number; onToggleMovement: () => void;
+  showAIS: boolean; onToggleAIS: () => void;
+  showSentinel: boolean; onToggleSentinel: () => void;
+}) {
+  const btnStyle = (active: boolean, color = "#06b6d4") => ({
+    display: "flex", alignItems: "center", gap: 5,
+    background: active ? `${color}18` : "rgba(13,17,23,0.85)",
+    border: `1px solid ${active ? color : "#30363d"}`,
+    borderRadius: 5, padding: "5px 10px", cursor: "pointer",
+    fontFamily: "monospace", fontSize: 10,
+    color: active ? color : "#8b949e",
+    transition: "all 0.2s ease",
+  } as React.CSSProperties);
+
   return (
-    <button
-      className="mv-toggle-btn"
-      onClick={onToggle}
-      style={{
-        position: "absolute", top: 8, right: 8, zIndex: 900,
-        display: "flex", alignItems: "center", gap: 5,
-        background: on ? "rgba(6,182,212,0.10)" : "rgba(13,17,23,0.85)",
-        border: `1px solid ${on ? "#06b6d4" : "#30363d"}`,
-        borderRadius: 5, padding: "5px 10px", cursor: "pointer",
-        fontFamily: "monospace", fontSize: 10, color: on ? "#06b6d4" : "#8b949e",
-        transition: "all 0.2s ease",
-      }}
-    >
-      {/* Live dot */}
-      <div style={{
-        width: 6, height: 6, borderRadius: "50%",
-        background: on ? "#06b6d4" : "#484f58",
-        animation: on ? "live-pulse 2s ease-in-out infinite" : undefined,
-      }} />
-      MOVEMENT {on ? `· ${count}` : "OFF"}
-    </button>
+    <div style={{
+      position: "absolute", top: 8, right: 8, zIndex: 900,
+      display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end",
+    }}>
+      {/* Movement intelligence */}
+      <button style={btnStyle(showMovement)} onClick={onToggleMovement}>
+        <div style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: showMovement ? "#06b6d4" : "#484f58",
+          animation: showMovement ? "live-pulse 2s ease-in-out infinite" : undefined,
+        }} />
+        MOVEMENT {showMovement ? `· ${movementCount}` : "OFF"}
+      </button>
+
+      {/* AIS vessel tracking */}
+      <button style={btnStyle(showAIS, "#4a9eff")} onClick={onToggleAIS}>
+        <div style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: showAIS ? "#4a9eff" : "#484f58",
+          animation: showAIS ? "live-pulse 2s ease-in-out infinite" : undefined,
+        }} />
+        AIS VESSELS {showAIS ? "· LIVE" : "OFF"}
+      </button>
+
+      {/* Sentinel-1 acquisitions */}
+      <button style={btnStyle(showSentinel, "#a855f7")} onClick={onToggleSentinel}>
+        <div style={{
+          width: 14, height: 14, borderRadius: 2,
+          background: showSentinel ? "linear-gradient(135deg,#a855f7,#06b6d4)" : "#30363d",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 7, fontWeight: 700, color: "#fff", lineHeight: 1,
+          flexShrink: 0,
+        }}>
+          S1
+        </div>
+        SENTINEL-1 {showSentinel ? "· LIVE" : "OFF"}
+      </button>
+    </div>
   );
 }
 
@@ -110,6 +146,8 @@ export default function DashboardClient({ initialAlerts, initialGeojson }: Props
   const [selectedAsset, setSelectedAsset] = useState<AssetDetail | null>(null);
   const [assetLoading, setAssetLoading] = useState(false);
   const [showMovement, setShowMovement] = useState(true);
+  const [showAIS, setShowAIS] = useState(false);
+  const [showSentinel, setShowSentinel] = useState(false);
   const [patterns, setPatterns] = useState<MovementPattern[]>([]);
   const [movementEventCount, setMovementEventCount] = useState(0);
 
@@ -178,22 +216,37 @@ export default function DashboardClient({ initialAlerts, initialGeojson }: Props
           activeModule={activeModule}
           onAssetClick={handleAssetClick}
           showMovement={showMovement}
+          showAIS={showAIS}
           onPatterns={handlePatterns}
         />
 
         {/* Legend sits over the map, bottom-left */}
         <ModuleLegend activeModule={activeModule} onModuleChange={setActiveModule} />
 
-        {/* Movement on/off toggle — top-right of map */}
-        <MovementToggle
-          on={showMovement}
-          count={movementEventCount}
-          onToggle={() => setShowMovement((v) => !v)}
+        {/* Map toolbar: movement + AIS + Sentinel toggles — top-right */}
+        <MapToolbar
+          showMovement={showMovement}
+          movementCount={movementEventCount}
+          onToggleMovement={() => setShowMovement((v) => !v)}
+          showAIS={showAIS}
+          onToggleAIS={() => setShowAIS((v) => !v)}
+          showSentinel={showSentinel}
+          onToggleSentinel={() => setShowSentinel((v) => !v)}
         />
 
-        {/* Liquid AI floating panel — bottom right */}
+        {/* Liquid AI floating panel — bottom right (above Sentinel panel) */}
         <LiquidAnalysisPanel />
       </div>
+
+      {/* Sentinel-1 acquisition panel — bottom-right corner, outside map div */}
+      <SentinelPanel
+        assetId={selectedAssetId}
+        assetName={selectedAsset?.name}
+        lat={selectedAsset?.lat}
+        lng={selectedAsset?.lng}
+        visible={showSentinel}
+        onToggle={() => setShowSentinel(false)}
+      />
 
       {/* Right detail panel — slides over map */}
       <AssetDetailPanel

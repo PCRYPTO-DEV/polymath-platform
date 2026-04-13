@@ -88,7 +88,12 @@ async function fetchAnalysis(
   return res.json();
 }
 
-// Generates a mock base64 PNG placeholder (1x1 pixel gray)
+// Generates a 1×1 grey pixel PNG as a placeholder when no real camera image is available
+function mockImageBase64(): string {
+  // 1×1 grey PNG — base64 encoded, valid for API submission
+  return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+}
+
 export default function LiquidAnalysisPanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("sar");

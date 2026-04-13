@@ -1,0 +1,10 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+httpx==0.27.0
+numpy==1.26.4
+pandas==2.2.0
+pygmtsar==2024.5.0
+boto3==1.34.0
+python-dotenv==1.0.0
+pydantic==2.8.0
+aiofiles==23.2.1
