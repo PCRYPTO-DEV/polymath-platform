@@ -99,12 +99,12 @@ function cellIntensity(lat: number, lng: number, seed: number): number {
 // ── Draw the canvas ──────────────────────────────────────────────────────────
 function drawTraffic(canvas: HTMLCanvasElement, map: ReturnType<typeof useMap>, seed: number) {
   const size = map.getSize();
-  if (canvas.width !== size.x || canvas.height !== size.y) {
-    canvas.width  = size.x;
-    canvas.height = size.y;
-  }
   const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, size.x, size.y);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Use latLngToContainerPoint — canvas is offset via CSS transform to match
+  // the container origin, so these coords map directly to canvas pixels.
+  const W = canvas.width, H = canvas.height;
 
   const STEP = 2.5; // degrees per grid cell
 
@@ -119,7 +119,7 @@ function drawTraffic(canvas: HTMLCanvasElement, map: ReturnType<typeof useMap>, 
       const x = Math.min(sw.x, ne.x), y = Math.min(sw.y, ne.y);
       const w = Math.abs(ne.x - sw.x), h = Math.abs(ne.y - sw.y);
       if (w < 0.5 || h < 0.5) continue;
-      if (x + w < 0 || x > size.x || y + h < 0 || y > size.y) continue;
+      if (x + w < 0 || x > W || y + h < 0 || y > H) continue;
 
       let r: number, g: number, b: number, a: number;
       if (intensity > 0.72) {
@@ -161,7 +161,7 @@ function drawTraffic(canvas: HTMLCanvasElement, map: ReturnType<typeof useMap>, 
     const lng = R.lngMin + sr(i, seed + 2) * (R.lngMax - R.lngMin) + jLng;
 
     const pt = map.latLngToContainerPoint([lat, lng]);
-    if (pt.x < 0 || pt.x > size.x || pt.y < 0 || pt.y > size.y) continue;
+    if (pt.x < 0 || pt.x > W || pt.y < 0 || pt.y > H) continue;
 
     const intensity = sr(i * 3, seed + 5);
     let dotColor: string;
@@ -187,30 +187,54 @@ export default function TrafficLayer({ visible }: Props) {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rafRef    = useRef<number | null>(null);
 
   useEffect(() => {
-    // Create canvas once, appended to map container (not a pane — avoids transform issues)
+    // Append canvas to the overlayPane so it shares Leaflet's coordinate transform —
+    // this keeps it perfectly aligned during zoom/pan animations.
+    const pane = map.getPane("overlayPane") ?? map.getContainer();
     const canvas = document.createElement("canvas");
     canvas.style.cssText = [
-      "position:absolute", "inset:0", "pointer-events:none",
-      "z-index:450", "mix-blend-mode:screen", "opacity:0.85",
+      "position:absolute", "top:0", "left:0",
+      "pointer-events:none",
+      "z-index:200", "mix-blend-mode:screen", "opacity:0.85",
     ].join(";");
-    map.getContainer().appendChild(canvas);
+    pane.appendChild(canvas);
     canvasRef.current = canvas;
+
+    const seed = () => Math.floor(Date.now() / 10000);
 
     const redraw = () => {
       if (!canvasRef.current) return;
-      const seed = Math.floor(Date.now() / 10000);
-      drawTraffic(canvasRef.current, map, seed);
+      // Resize canvas to match the map container (not the pane, which may be larger)
+      const size = map.getSize();
+      const origin = map.containerPointToLayerPoint([0, 0]);
+      canvas.style.transform = `translate(${origin.x}px,${origin.y}px)`;
+      if (canvas.width !== size.x || canvas.height !== size.y) {
+        canvas.width  = size.x;
+        canvas.height = size.y;
+      }
+      drawTraffic(canvasRef.current, map, seed());
     };
 
-    map.on("moveend zoomend resize viewreset", redraw);
+    // Throttled redraw via requestAnimationFrame — fires every frame during
+    // zoom/pan animations so canvas stays aligned with tiles
+    const scheduleRedraw = () => {
+      if (rafRef.current !== null) return; // already scheduled
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        redraw();
+      });
+    };
+
+    map.on("move zoom resize viewreset moveend zoomend", scheduleRedraw);
     redraw();
     timerRef.current = setInterval(redraw, 10000);
 
     return () => {
-      map.off("moveend zoomend resize viewreset", redraw);
+      map.off("move zoom resize viewreset moveend zoomend", scheduleRedraw);
       if (timerRef.current) clearInterval(timerRef.current);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       canvas.remove();
       canvasRef.current = null;
     };
