@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { ChevronDown, ChevronUp, Upload, Zap, Camera, Loader2 } from "lucide-react";
+import { generateInSARImage } from "@/lib/sar-image-generator";
 
 type Tab = "sar" | "camera";
 
@@ -88,10 +89,6 @@ async function fetchAnalysis(
 }
 
 // Generates a mock base64 PNG placeholder (1x1 pixel gray)
-function mockImageBase64(): string {
-  return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-}
-
 export default function LiquidAnalysisPanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("sar");
@@ -103,16 +100,38 @@ export default function LiquidAnalysisPanel() {
   const [cameraLoading, setCameraLoading] = useState(false);
   const [sarError, setSarError] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  // Generated or uploaded InSAR image base64 (real image sent to Claude vision)
+  const [sarImageBase64, setSarImageBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const runSarAnalysis = useCallback(async (imageBase64?: string) => {
+  // Auto-generate InSAR image when sample or panel opens
+  useEffect(() => {
     const sample = SAR_SAMPLES[selectedSample];
+    const img = generateInSARImage({
+      rateMMmo: sample.rateMMmo,
+      riskLevel: sample.riskLevel,
+      type: sample.assetType,
+      width: 320,
+      height: 200,
+    });
+    setSarImageBase64(img);
+    setSarResult(null);
+  }, [selectedSample]);
+
+  const runSarAnalysis = useCallback(async (overrideBase64?: string) => {
+    const sample = SAR_SAMPLES[selectedSample];
+    // Use uploaded image → generated InSAR image → regenerate fresh
+    const imgToSend = overrideBase64 ?? sarImageBase64 ?? generateInSARImage({
+      rateMMmo: sample.rateMMmo,
+      riskLevel: sample.riskLevel,
+      type: sample.assetType,
+    });
     setSarLoading(true);
     setSarError(null);
     setSarResult(null);
     try {
       const result = await fetchAnalysis(
-        imageBase64 ?? mockImageBase64(),
+        imgToSend,
         sample.assetName,
         sample.assetType,
         sample.location,
@@ -130,7 +149,7 @@ export default function LiquidAnalysisPanel() {
     } finally {
       setSarLoading(false);
     }
-  }, [selectedSample]);
+  }, [selectedSample, sarImageBase64]);
 
   const runCameraAnalysis = useCallback(async () => {
     const feed = CAMERA_FEEDS[selectedCamera];
@@ -160,6 +179,7 @@ export default function LiquidAnalysisPanel() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const base64 = (ev.target?.result as string).split(",")[1];
+        setSarImageBase64(base64);
         runSarAnalysis(base64);
       };
       reader.readAsDataURL(file);
@@ -174,6 +194,7 @@ export default function LiquidAnalysisPanel() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const base64 = (ev.target?.result as string).split(",")[1];
+        setSarImageBase64(base64);
         runSarAnalysis(base64);
       };
       reader.readAsDataURL(file);
@@ -276,6 +297,7 @@ export default function LiquidAnalysisPanel() {
                 loading={sarLoading}
                 result={sarResult}
                 error={sarError}
+                sarImageBase64={sarImageBase64}
               />
             )}
             {activeTab === "camera" && (
@@ -301,8 +323,8 @@ export default function LiquidAnalysisPanel() {
               justifyContent: "space-between",
             }}
           >
-            <span style={{ fontSize: 10, color: "#484f58" }}>Powered by Liquid AI LFM2.5-VL-1.6B</span>
-            <span style={{ fontSize: 10, color: "#484f58" }}>labs.liquid.ai</span>
+            <span style={{ fontSize: 10, color: "#484f58" }}>Claude claude-haiku Vision · Liquid AI LFM2-VL</span>
+            <span style={{ fontSize: 10, color: "#484f58" }}>Polymath SAR Engine</span>
           </div>
         </div>
       )}
@@ -323,6 +345,7 @@ interface SarTabProps {
   loading: boolean;
   result: AnalysisResult | null;
   error: string | null;
+  sarImageBase64: string | null;
 }
 
 function SarTab({
@@ -336,6 +359,7 @@ function SarTab({
   loading,
   result,
   error,
+  sarImageBase64,
 }: SarTabProps) {
   const [dragOver, setDragOver] = useState(false);
 
@@ -369,6 +393,26 @@ function SarTab({
         </div>
       </div>
 
+      {/* Live InSAR image preview */}
+      {sarImageBase64 && (
+        <div style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: "1px solid #21262d" }}>
+          <img
+            src={`data:image/png;base64,${sarImageBase64}`}
+            alt="InSAR interferogram"
+            style={{ width: "100%", display: "block", imageRendering: "pixelated" }}
+          />
+          <div style={{
+            position: "absolute", top: 5, left: 5,
+            fontSize: 9, color: "#06b6d4",
+            background: "rgba(0,0,0,0.7)",
+            padding: "2px 5px", borderRadius: 3,
+            letterSpacing: "0.05em",
+          }}>
+            InSAR INTERFEROGRAM
+          </div>
+        </div>
+      )}
+
       {/* Drag-drop zone */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -378,15 +422,15 @@ function SarTab({
         style={{
           border: `1px dashed ${dragOver ? "#06b6d4" : "#30363d"}`,
           borderRadius: 6,
-          padding: "10px",
+          padding: "8px",
           textAlign: "center",
           cursor: "pointer",
           background: dragOver ? "rgba(6,182,212,0.05)" : "transparent",
           transition: "all 0.15s ease",
         }}
       >
-        <Upload size={14} color="#484f58" style={{ margin: "0 auto 4px" }} />
-        <div style={{ fontSize: 10, color: "#484f58" }}>Drop custom SAR image or click to upload</div>
+        <Upload size={12} color="#484f58" style={{ margin: "0 auto 3px" }} />
+        <div style={{ fontSize: 10, color: "#484f58" }}>Upload your own SAR image</div>
         <input
           ref={fileInputRef}
           type="file"
