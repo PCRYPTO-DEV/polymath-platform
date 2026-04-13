@@ -47,6 +47,9 @@ Provide a concise expert InSAR analysis (3–5 sentences) covering:
 Use precise SAR/InSAR technical terminology. Do not reference any specific country's standards — use internationally recognised thresholds only. Be direct and actionable.`;
 }
 
+// Minimum valid 1x1 PNG in base64 — used as placeholder when no image is uploaded
+const PLACEHOLDER_IMG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
 // ── 1. Anthropic Claude (primary) ─────────────────────────────────────
 async function analyzeWithClaude(
   imageBase64: string,
@@ -55,28 +58,30 @@ async function analyzeWithClaude(
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
+  // Use a valid placeholder if no real image was uploaded
+  const imgData = imageBase64 && imageBase64.length > 100 ? imageBase64 : PLACEHOLDER_IMG;
+  const hasRealImage = imageBase64 && imageBase64.length > 100;
+
   try {
     const client = new Anthropic({ apiKey });
+
+    // Build message content — include image only when a real one was provided
+    const content: Anthropic.MessageParam["content"] = hasRealImage
+      ? [
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: imgData },
+          },
+          { type: "text", text: buildPrompt(ctx) },
+        ]
+      : [{ type: "text", text: buildPrompt(ctx) }];
+
     const response = await client.messages.create({
       model: "claude-3-haiku-20240307",
       max_tokens: 400,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: "image/png",
-                data: imageBase64,
-              },
-            },
-            { type: "text", text: buildPrompt(ctx) },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content }],
     });
+
     const block = response.content[0];
     return block.type === "text" ? block.text : null;
   } catch (err) {
