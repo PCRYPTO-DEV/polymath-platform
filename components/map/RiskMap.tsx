@@ -39,6 +39,9 @@ const RiskMapInner = dynamic(() => import("./RiskMapInner"), {
   ),
 });
 
+// Re-export RiskMapProps so DashboardClient can import the full type
+export type { RiskMapProps };
+
 export default function RiskMap(props: RiskMapProps) {
   return <RiskMapInner {...props} />;
 }

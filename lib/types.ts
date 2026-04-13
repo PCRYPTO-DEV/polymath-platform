@@ -62,3 +62,56 @@ export interface LiquidAnalysis {
   confidence?: string;
   flags?: string[];
 }
+
+// ── Movement Intelligence Types ──────────────────────────────────────────────
+
+export type RiskProximity = "safe" | "caution" | "danger";
+export type MovementType = "vehicle" | "person" | "group";
+export type PatternType = "convergence" | "evacuation" | "cluster" | "density_anomaly" | "normal";
+export type PatternSeverity = "info" | "warning" | "critical";
+
+export interface MovementEvent {
+  id: string;
+  type: MovementType;
+  lat: number;
+  lng: number;
+  heading: number;       // 0–359 degrees
+  speed: number;         // km/h
+  nearAssetId: string;
+  nearAssetName: string;
+  riskProximity: RiskProximity;
+  timestamp: string;
+  count?: number;        // for "group" type
+}
+
+export interface MovementCluster {
+  id: string;
+  centerLat: number;
+  centerLng: number;
+  count: number;
+  nearAssetId: string;
+  risk: RiskProximity;
+}
+
+export interface MovementPattern {
+  type: PatternType;
+  assetId: string;
+  assetName: string;
+  description: string;
+  severity: PatternSeverity;
+  eventCount: number;
+  confidence: number;    // 0–1
+}
+
+export interface MovementResponse {
+  events: MovementEvent[];
+  clusters: MovementCluster[];
+  patterns: MovementPattern[];
+  summary: {
+    totalEvents: number;
+    dangerZoneEvents: number;
+    patternCount: number;
+    timestamp: string;
+    analysisMs: number;
+  };
+}
