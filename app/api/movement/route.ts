@@ -6,6 +6,8 @@
 //   2. Convergence/Evacuation — directional circular statistics per risk zone
 //   3. Density anomaly     — observed vs risk-weighted expected baseline
 //   4. Cross-zone correlation — simultaneous multi-zone activity flag
+//   5. Convoy detection    — 3+ military vehicles in tight formation
+//   6. Dark zone           — AIS-silent military zone detection
 
 import { NextResponse } from "next/server";
 import type {
@@ -119,9 +121,29 @@ const MONITORING_ZONES = [
   { id: "perth_freeway",             name: "Perth Kwinana Freeway",        lat:-31.9505, lng: 115.8605, risk: "safe",       type: "building", density: 3 },
   { id: "auckland_harbour",          name: "Auckland Harbour Bridge",      lat:-36.8254, lng: 174.7627, risk: "stable",     type: "bridge",   density: 3 },
   { id: "nz_alpine_fault",           name: "NZ Alpine Fault Zone",         lat:-43.5321, lng: 172.6362, risk: "dangerous",  type: "slope",    density: 4 },
+
+  // ── MILITARY MONITORING ZONES ─────────────────────────────────────────────
+  { id: "taiwan_strait",        name: "Taiwan Strait Chokepoint",     lat: 24.5,  lng: 120.5,  risk: "dangerous",  type: "military", density: 8 },
+  { id: "strait_hormuz",        name: "Strait of Hormuz",             lat: 26.5,  lng:  56.5,  risk: "dangerous",  type: "military", density: 7 },
+  { id: "south_china_sea_scs",  name: "South China Sea — Spratlys",   lat: 10.5,  lng: 114.0,  risk: "dangerous",  type: "military", density: 7 },
+  { id: "black_sea_kerch",      name: "Black Sea — Kerch Strait",     lat: 45.3,  lng:  36.5,  risk: "dangerous",  type: "military", density: 6 },
+  { id: "bab_el_mandeb",        name: "Bab-el-Mandeb Strait",         lat: 12.6,  lng:  43.4,  risk: "dangerous",  type: "military", density: 6 },
+  { id: "malacca_strait",       name: "Malacca Strait",               lat:  3.1,  lng: 101.7,  risk: "concerning", type: "military", density: 5 },
+  { id: "suez_canal",           name: "Suez Canal Transit Zone",      lat: 30.7,  lng:  32.3,  risk: "concerning", type: "military", density: 5 },
+  { id: "ukraine_frontline",    name: "Ukraine Eastern Front",        lat: 48.9,  lng:  37.8,  risk: "dangerous",  type: "military", density: 8 },
+  { id: "kashmir_loc",          name: "Kashmir Line of Control",      lat: 34.1,  lng:  74.8,  risk: "dangerous",  type: "military", density: 6 },
+  { id: "korean_dmz",           name: "Korean DMZ",                   lat: 38.0,  lng: 127.5,  risk: "dangerous",  type: "military", density: 6 },
+  { id: "gaza_border",          name: "Gaza–Israel Border Zone",      lat: 31.4,  lng:  34.4,  risk: "dangerous",  type: "military", density: 7 },
+  { id: "south_sudan_border",   name: "South Sudan–Sudan Border",     lat:  9.8,  lng:  31.5,  risk: "concerning", type: "military", density: 4 },
+  { id: "myanmar_china_border", name: "Myanmar Northern Conflict",    lat: 23.5,  lng:  98.0,  risk: "concerning", type: "military", density: 5 },
+  { id: "crimea_coast",         name: "Crimea Naval Corridor",        lat: 45.2,  lng:  34.1,  risk: "dangerous",  type: "military", density: 7 },
+  { id: "guam_naval_base",      name: "Guam Naval Base Perimeter",    lat: 13.4,  lng: 144.7,  risk: "monitor",    type: "military", density: 4 },
 ] as const;
 
-type Zone = typeof MONITORING_ZONES[number];
+type Zone = (typeof MONITORING_ZONES)[number];
+
+// ── Module-level state for dark-zone detection ────────────────────────────────
+const previousDensities = new Map<string, number>();
 
 // ── Seeded pseudo-random ──────────────────────────────────────────────────────
 function sr(seed: number, salt: number = 0): number {
@@ -139,8 +161,10 @@ function generateEvents(tw: number): MovementEvent[] {
       const seed = tw * 10000 + idx;
 
       // Position jitter around zone centre
-      const latOff = (sr(seed, 1) - 0.5) * 0.016;
-      const lngOff = (sr(seed, 2) - 0.5) * 0.016;
+      // Military zones: tighter formation spacing (0.3–1 km ≈ 0.003–0.009 deg)
+      const jitterScale = zone.type === "military" ? 0.009 : 0.016;
+      const latOff = (sr(seed, 1) - 0.5) * jitterScale;
+      const lngOff = (sr(seed, 2) - 0.5) * jitterScale;
       const lat = zone.lat + latOff;
       const lng = zone.lng + lngOff;
 
@@ -148,11 +172,16 @@ function generateEvents(tw: number): MovementEvent[] {
       const riskProximity: RiskProximity =
         degDist < 0.003 ? "danger" : degDist < 0.008 ? "caution" : "safe";
 
-      // Directional bias based on risk level
+      // Directional logic
       const toCentre = Math.atan2(zone.lat - lat, zone.lng - lng) * 180 / Math.PI;
       const roll = sr(seed, 5);
       let heading: number;
-      if (zone.risk === "dangerous" && roll < 0.52) {
+
+      if (zone.type === "military") {
+        // Convoys cluster heading with ±20° variance
+        const baseHeading = sr(zone.id.length * 17 + 3, 0) * 360;
+        heading = ((baseHeading + (sr(seed, 6) - 0.5) * 40) % 360 + 360) % 360;
+      } else if (zone.risk === "dangerous" && roll < 0.52) {
         heading = ((toCentre + 180 + (sr(seed, 6) - 0.5) * 50) % 360 + 360) % 360;
       } else if (zone.risk === "dangerous" && roll < 0.78) {
         heading = ((toCentre + (sr(seed, 6) - 0.5) * 25) % 360 + 360) % 360;
@@ -160,15 +189,27 @@ function generateEvents(tw: number): MovementEvent[] {
         heading = sr(seed, 7) * 360;
       }
 
-      const typeRoll = sr(seed, 8);
+      // Type assignment
       let type: MovementType;
-      if (zone.type === "bridge") {
-        type = typeRoll < 0.75 ? "vehicle" : "person";
-      } else if (zone.type === "slope") {
-        type = typeRoll < 0.18 ? "vehicle" : typeRoll < 0.75 ? "person" : "group";
+      if (zone.type === "military") {
+        type = "vehicle"; // military entities are always vehicles
       } else {
-        type = typeRoll < 0.52 ? "vehicle" : typeRoll < 0.88 ? "person" : "group";
+        const typeRoll = sr(seed, 8);
+        if (zone.type === "bridge") {
+          type = typeRoll < 0.75 ? "vehicle" : "person";
+        } else if (zone.type === "slope") {
+          type = typeRoll < 0.18 ? "vehicle" : typeRoll < 0.75 ? "person" : "group";
+        } else {
+          type = typeRoll < 0.52 ? "vehicle" : typeRoll < 0.88 ? "person" : "group";
+        }
       }
+
+      // Speed: military 40–80 km/h, vehicle 20–110 km/h, person 2–12 km/h
+      const speed = zone.type === "military"
+        ? Math.round(40 + sr(seed, 9) * 40)
+        : type === "vehicle"
+          ? Math.round(20 + sr(seed, 9) * 90)
+          : Math.round(2 + sr(seed, 9) * 10);
 
       out.push({
         id: `ev_${zone.id}_${tw}_${i}`,
@@ -176,9 +217,7 @@ function generateEvents(tw: number): MovementEvent[] {
         lat: Math.round(lat * 1e5) / 1e5,
         lng: Math.round(lng * 1e5) / 1e5,
         heading: Math.round(heading),
-        speed: type === "vehicle"
-          ? Math.round(20 + sr(seed, 9) * 90)
-          : Math.round(2 + sr(seed, 9) * 10),
+        speed,
         nearAssetId: zone.id,
         nearAssetName: zone.name,
         riskProximity,
@@ -289,6 +328,84 @@ function crossZone(events: MovementEvent[], zones: readonly Zone[]): MovementPat
   return [];
 }
 
+// 6. Convoy and military pattern detection
+function convoysAndMilitary(events: MovementEvent[], zones: readonly Zone[]): MovementPattern[] {
+  const out: MovementPattern[] = [];
+  const milZones = zones.filter(z => z.type === "military");
+
+  for (const z of milZones) {
+    const zoneEvents = events.filter(e =>
+      e.nearAssetId === z.id &&
+      e.type === "vehicle" &&
+      e.speed > 25
+    );
+    if (zoneEvents.length < 3) continue;
+
+    // Find clusters of 3+ events within 1.5km radius
+    const used = new Set<string>();
+    for (const pivot of zoneEvents) {
+      if (used.has(pivot.id)) continue;
+      const nearby = zoneEvents.filter(e =>
+        !used.has(e.id) &&
+        haversineKm(pivot.lat, pivot.lng, e.lat, e.lng) <= 1.5
+      );
+      if (nearby.length < 3) continue;
+
+      // Check heading alignment (within 35° of mean)
+      const headings = nearby.map(e => e.heading);
+      const sinSum = headings.reduce((s, h) => s + Math.sin(h * Math.PI / 180), 0);
+      const cosSum = headings.reduce((s, h) => s + Math.cos(h * Math.PI / 180), 0);
+      const meanHeading = Math.atan2(sinSum / headings.length, cosSum / headings.length) * 180 / Math.PI;
+      const aligned = nearby.filter(e => {
+        let diff = Math.abs(e.heading - ((meanHeading + 360) % 360));
+        if (diff > 180) diff = 360 - diff;
+        return diff <= 35;
+      });
+
+      if (aligned.length >= 3) {
+        const avgSpeed = Math.round(aligned.reduce((s, e) => s + e.speed, 0) / aligned.length);
+        aligned.forEach(e => used.add(e.id));
+        out.push({
+          type: "convoy" as PatternType,
+          assetId: z.id,
+          assetName: z.name,
+          description: `CONVOY DETECTED: ${aligned.length} vehicles in formation — ${avgSpeed} km/h avg — ${z.name}`,
+          severity: (z.risk === "dangerous" ? "critical" : "warning") as PatternSeverity,
+          eventCount: aligned.length,
+          confidence: Math.min(0.95, 0.70 + aligned.length * 0.05),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// 7. Dark zone detection — AIS-silent zones
+function darkZone(events: MovementEvent[], zones: readonly Zone[]): MovementPattern[] {
+  const out: MovementPattern[] = [];
+  const milZones = zones.filter(z => z.type === "military");
+
+  for (const z of milZones) {
+    const currentCount = events.filter(e => e.nearAssetId === z.id).length;
+    const prevCount = previousDensities.get(z.id);
+
+    if (prevCount !== undefined && prevCount > 0 && currentCount === 0) {
+      out.push({
+        type: "dark_zone" as PatternType,
+        assetId: z.id,
+        assetName: z.name,
+        description: `DARK ZONE: ${z.name} went AIS-silent (was ${prevCount} entities)`,
+        severity: (z.risk === "dangerous" ? "critical" : "warning") as PatternSeverity,
+        eventCount: 0,
+        confidence: 0.78,
+      });
+    }
+
+    previousDensities.set(z.id, currentCount);
+  }
+  return out;
+}
+
 // ── GET /api/movement ─────────────────────────────────────────────────────────
 export async function GET() {
   const t0 = Date.now();
@@ -303,6 +420,8 @@ export async function GET() {
       ...density(events, MONITORING_ZONES),
       ...clusterPatterns(clusters, MONITORING_ZONES),
       ...crossZone(events, MONITORING_ZONES),
+      ...convoysAndMilitary(events, MONITORING_ZONES),
+      ...darkZone(events, MONITORING_ZONES),
     ]
       .filter((p, i, arr) => arr.findIndex(q => q.assetId === p.assetId && q.type === p.type) === i)
       .sort((a, b) => sRank[a.severity] - sRank[b.severity]);

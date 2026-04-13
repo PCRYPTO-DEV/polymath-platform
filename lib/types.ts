@@ -67,7 +67,7 @@ export interface LiquidAnalysis {
 
 export type RiskProximity = "safe" | "caution" | "danger";
 export type MovementType = "vehicle" | "person" | "group";
-export type PatternType = "convergence" | "evacuation" | "cluster" | "density_anomaly" | "normal";
+export type PatternType = "convergence" | "evacuation" | "cluster" | "density_anomaly" | "normal" | "convoy" | "dark_zone";
 export type PatternSeverity = "info" | "warning" | "critical";
 
 export interface MovementEvent {

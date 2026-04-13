@@ -28,6 +28,8 @@ const PATTERN_LABEL: Record<string, string> = {
   cluster:         "CLUSTER",
   density_anomaly: "DENSITY ⚠",
   normal:          "NORMAL",
+  convoy:          "⚡ CONVOY",
+  dark_zone:       "⬛ DARK ZONE",
 };
 
 // ── Pattern alert bar (max 4 patterns shown) ─────────────────────────────────
@@ -73,6 +75,48 @@ function PatternBar({ patterns }: { patterns: MovementPattern[] }) {
           +{patterns.length - 4} more
         </div>
       )}
+    </div>
+  );
+}
+
+// ── LIVE tracking badge (top-left) ───────────────────────────────────────────
+function LiveBadge({ count, lastUpdated }: { count: number; lastUpdated: number }) {
+  const [secsAgo, setSecsAgo] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSecsAgo(Math.round((Date.now() - lastUpdated) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lastUpdated]);
+
+  return (
+    <div style={{
+      position: "absolute", top: 8, left: 8, zIndex: 850,
+      display: "flex", alignItems: "center", gap: 6,
+      background: "rgba(13,17,23,0.88)",
+      border: "1px solid #22c55e44",
+      borderRadius: 5,
+      padding: "4px 10px",
+      fontFamily: "monospace",
+      fontSize: 10,
+      color: "#22c55e",
+      backdropFilter: "blur(6px)",
+      pointerEvents: "none",
+    }}>
+      <span style={{
+        display: "inline-block",
+        width: 7, height: 7,
+        borderRadius: "50%",
+        background: "#22c55e",
+        boxShadow: "0 0 6px #22c55e",
+        animation: "live-pulse 2s ease-in-out infinite",
+        flexShrink: 0,
+      }} />
+      <span>LIVE TRACKING</span>
+      <span style={{ color: "#8b949e" }}>—</span>
+      <span style={{ color: "#c9d1d9" }}>{count.toLocaleString()} entities</span>
+      <span style={{ color: "#8b949e" }}>—</span>
+      <span style={{ color: "#484f58" }}>updated {secsAgo}s ago</span>
     </div>
   );
 }
@@ -150,6 +194,7 @@ export default function DashboardClient({ initialAlerts, initialGeojson }: Props
   const [showSentinel, setShowSentinel] = useState(false);
   const [patterns, setPatterns] = useState<MovementPattern[]>([]);
   const [movementEventCount, setMovementEventCount] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState(Date.now());
 
   // Fetch full asset detail whenever selection changes
   useEffect(() => {
@@ -188,6 +233,7 @@ export default function DashboardClient({ initialAlerts, initialGeojson }: Props
         if (res.ok) {
           const data = await res.json();
           setMovementEventCount(data.summary?.totalEvents ?? 0);
+          setLastUpdated(Date.now());
         }
       } catch { /* ignore */ }
     };
@@ -209,6 +255,11 @@ export default function DashboardClient({ initialAlerts, initialGeojson }: Props
       <div style={{ flex: 1, height: "100%", position: "relative" }}>
         {/* Pattern detection alert bar — floats above map */}
         <PatternBar patterns={patterns} />
+
+        {/* LIVE tracking badge — top-left of map */}
+        {showMovement && (
+          <LiveBadge count={movementEventCount} lastUpdated={lastUpdated} />
+        )}
 
         <RiskMap
           geojson={initialGeojson}
